@@ -14,6 +14,8 @@ your device.
   archived sum and deleted (only their net effect is kept).
 - Reminder every N minutes (default 30) while a timer runs: banner + optional beep.
 - Export JSON (backup) / CSV, import JSON (replaces all data).
+- Works fully offline after the first visit (whole app precached by a service worker).
+  New versions are fetched when online and take effect on the next app start.
 
 ## Limitations (iPhone)
 
