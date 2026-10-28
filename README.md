@@ -1,7 +1,7 @@
 # UpDown
 
 Up/down timer that adds to or subtracts from a long-term time balance per category
-(e.g. overtime / flextime). Installable web app (PWA). All data stays in the browser on
+(e.g. flextime). Installable web app (PWA). All data stays in the browser on
 your device.
 
 ## Features
