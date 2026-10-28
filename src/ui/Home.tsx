@@ -38,7 +38,7 @@ export function Home({ state, now, update }: Props) {
   return (
     <section>
       {state.categories.length === 0 && (
-        <p class="muted">No categories yet. Add one below, e.g. “Overtime”.</p>
+        <p class="muted">No categories yet. Add one below.</p>
       )}
       <ul class="cards">
         {state.categories.map((c) => (
