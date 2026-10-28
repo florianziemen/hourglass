@@ -16,6 +16,8 @@ Static PWA: Vite + Preact + TypeScript. No backend; state persists in `localStor
   `dist/sw.js`. It is cache-first; any change to the build yields a new worker/cache.
   Not used by `npm run dev`. New files in `public/` are precached automatically.
 - `scripts/make-icons.mjs` – icons.
+- `.github/workflows/pages.yml` – CI: test, lint, format check, build on PRs; on `main`
+  also deploys `dist/` to GitHub Pages.
 - `test/` – vitest unit tests for logic, io, storage, format.
 
 ## Rules
