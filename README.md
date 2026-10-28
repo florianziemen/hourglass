@@ -43,3 +43,7 @@ Hosted at <https://florianziemen.github.io/updown/> (deployed from `main` by
 serving `dist/` works, sub-paths included (relative paths). Open the URL in Safari →
 Share → _Add to Home Screen_. Nothing is sent to the host besides fetching the static
 files.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
