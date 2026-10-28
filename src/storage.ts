@@ -10,11 +10,14 @@ export interface Store {
 export class WebStorageStore implements Store {
   constructor(
     private readonly storage: Storage,
-    private readonly key = "updown.state.v1",
+    private readonly key = "hourglass.state.v1",
+    // Key used before the rename to Hourglass; read when the current key is empty.
+    private readonly legacyKey = "updown.state.v1",
   ) {}
 
   load(): State {
-    const raw = this.storage.getItem(this.key);
+    const raw =
+      this.storage.getItem(this.key) ?? this.storage.getItem(this.legacyKey);
     if (raw === null) return emptyState();
     try {
       return parseState(raw);

@@ -86,15 +86,15 @@ export function App({ store }: { store: Store }) {
     active && state.categories.find((c) => c.id === active.categoryId);
   useEffect(() => {
     document.title = active
-      ? `${formatDuration(elapsedSeconds(active, now), { signed: false, showSeconds: true })} · UpDown`
-      : "UpDown";
+      ? `${formatDuration(elapsedSeconds(active, now), { signed: false, showSeconds: true })} · Hourglass`
+      : "Hourglass";
   }, [active, now]);
 
   return (
     <div class="app">
       <header class="topbar">
         <a href="#/" class="brand">
-          UpDown
+          Hourglass
         </a>
         <a href="#/settings" class="iconlink" aria-label="Settings">
           ⚙︎

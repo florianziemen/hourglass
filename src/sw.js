@@ -2,7 +2,7 @@
 // placeholders with a content hash and the list of all files in dist/.
 const VERSION = "__VERSION__";
 const PRECACHE = __PRECACHE__;
-const CACHE = `updown-${VERSION}`;
+const CACHE = `hourglass-${VERSION}`;
 
 // Precache the whole app on install so it works offline right after the first visit.
 self.addEventListener("install", (e) => {
@@ -23,7 +23,7 @@ self.addEventListener("activate", (e) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((k) => k.startsWith("updown-") && k !== CACHE)
+            .filter((k) => k.startsWith("hourglass-") && k !== CACHE)
             .map((k) => caches.delete(k)),
         ),
       )

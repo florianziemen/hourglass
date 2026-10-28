@@ -39,9 +39,16 @@ describe("WebStorageStore", () => {
     expect(store.load()).toEqual(s);
   });
 
+  it("loads data stored under the legacy key", () => {
+    const mem = new MemoryStorage();
+    const [s] = withCategory();
+    mem.setItem("updown.state.v1", JSON.stringify(s));
+    expect(new WebStorageStore(mem).load()).toEqual(s);
+  });
+
   it("backs up corrupt data and starts fresh", () => {
     const mem = new MemoryStorage();
-    mem.setItem("updown.state.v1", "garbage");
+    mem.setItem("hourglass.state.v1", "garbage");
     expect(new WebStorageStore(mem).load()).toEqual(emptyState());
     expect(mem.length).toBe(2);
   });

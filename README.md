@@ -1,4 +1,4 @@
-# UpDown
+# Hourglass
 
 Up/down timer that adds to or subtracts from a long-term time balance per category.
 Installable web app (PWA). All data stays in the browser on your device.
@@ -37,7 +37,7 @@ npm run icons      # regenerate PNG icons in public/
 
 ## Install on iPhone
 
-Hosted at <https://florianziemen.github.io/updown/> (deployed from `main` by
+Hosted at <https://florianziemen.github.io/hourglass/> (deployed from `main` by
 `.github/workflows/pages.yml`). Service workers need HTTPS; any static HTTPS host
 serving `dist/` works, sub-paths included (relative paths). Open the URL in Safari →
 Share → _Add to Home Screen_. Nothing is sent to the host besides fetching the static

@@ -1,4 +1,4 @@
-// Generates the PNG app icons (up and down triangles) without external tools.
+// Generates the PNG app icons (hourglass of a down and an up triangle) without external tools.
 import { Buffer } from "node:buffer";
 import { writeFileSync } from "node:fs";
 import { deflateSync, crc32 } from "node:zlib";
@@ -23,11 +23,10 @@ function png(size) {
       const u = x / size;
       const v = y / size;
       let c = bg;
-      // Up triangle on the left, down triangle on the right.
-      if (v > 0.3 && v < 0.7 && Math.abs(u - 0.3) < ((v - 0.3) / 0.4) * 0.18)
-        c = up;
-      if (v > 0.3 && v < 0.7 && Math.abs(u - 0.7) < ((0.7 - v) / 0.4) * 0.18)
-        c = down;
+      // Hourglass: down triangle on top, up triangle below, tips meeting at the centre.
+      const w = Math.abs(v - 0.5) / 0.3; // relative width: 0 at the waist, 1 at top/bottom
+      if (v > 0.2 && v < 0.8 && Math.abs(u - 0.5) < w * 0.25)
+        c = v < 0.5 ? down : up;
       row.set(c, 1 + x * 3);
     }
     rows.push(row);

@@ -1,6 +1,6 @@
 {
-  "name": "UpDown",
-  "short_name": "UpDown",
+  "name": "Hourglass",
+  "short_name": "Hourglass",
   "description": "Up/down timer with per-category time balances",
   "start_url": "./",
   "scope": "./",

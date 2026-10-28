@@ -11,7 +11,7 @@ Static PWA: Vite + Preact + TypeScript. No backend; state persists in `localStor
 - `src/storage.ts` – `Store` interface + `WebStorageStore`.
 - `src/ui/` – Preact components. `App.update(fn)` applies a transition, compacts,
   saves, and shows errors as a toast.
-- `src/sw.js` – service worker template. The `updown-sw` plugin in `vite.config.ts`
+- `src/sw.js` – service worker template. The `hourglass-sw` plugin in `vite.config.ts`
   fills in a precache list of all build output and a content-hash version, and emits
   `dist/sw.js`. It is cache-first; any change to the build yields a new worker/cache.
   Not used by `npm run dev`. New files in `public/` are precached automatically.

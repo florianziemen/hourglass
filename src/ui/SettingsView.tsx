@@ -28,7 +28,7 @@ export function SettingsView({ state, update, notify }: Props) {
     const stamp = new Date().toISOString().slice(0, 10);
     const file = new File(
       [kind === "json" ? toJSON(state) : toCSV(state)],
-      `updown-${stamp}.${kind}`,
+      `hourglass-${stamp}.${kind}`,
       { type: kind === "json" ? "application/json" : "text/csv" },
     );
     try {
