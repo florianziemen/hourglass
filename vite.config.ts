@@ -7,7 +7,7 @@ import preact from "@preact/preset-vite";
 /** Emits sw.js with a precache list of all build output and a content-hash version. */
 function serviceWorker(): Plugin {
   return {
-    name: "updown-sw",
+    name: "hourglass-sw",
     apply: "build",
     enforce: "post",
     generateBundle(_, bundle) {
