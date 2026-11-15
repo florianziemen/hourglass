@@ -213,12 +213,18 @@ label.check {
   font-weight: 600;
 }
 
-/* running bar */
+/* running bars */
 
-.running {
+.running-list {
   position: sticky;
   top: env(safe-area-inset-top);
   z-index: 5;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.running {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -226,7 +232,6 @@ label.check {
   border: 2px solid var(--cat);
   border-radius: 14px;
   padding: 10px 12px;
-  margin-bottom: 12px;
 }
 
 .running-info {

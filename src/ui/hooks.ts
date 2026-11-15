@@ -38,32 +38,39 @@ export function useHashRoute(): Route {
 }
 
 /**
- * Calls `onRemind` whenever the running timer completes another reminder interval.
+ * Calls `onRemind` with the timers that completed another reminder interval.
  * Intervals already elapsed when a timer is first seen (e.g. after reload) don't fire.
  */
 export function useReminder(
-  active: ActiveTimer | null,
+  timers: ActiveTimer[],
   settings: Settings,
   now: number,
-  onRemind: () => void,
+  onRemind: (due: ActiveTimer[]) => void,
 ): void {
-  const fired = useRef<{ start: number; count: number } | null>(null);
+  // Per category: start of the timer last seen and reminders already counted.
+  const fired = useRef(new Map<string, { start: number; count: number }>());
   useEffect(() => {
-    if (!active || !settings.reminderEnabled) {
-      fired.current = null;
+    const seen = fired.current;
+    if (!settings.reminderEnabled) {
+      seen.clear();
       return;
     }
-    const due = remindersDue(active, now, settings.reminderMinutes);
-    if (fired.current?.start !== active.start) {
-      fired.current = { start: active.start, count: due };
-      return;
+    const due: ActiveTimer[] = [];
+    for (const t of timers) {
+      const count = remindersDue(t, now, settings.reminderMinutes);
+      const f = seen.get(t.categoryId);
+      if (f?.start !== t.start) {
+        seen.set(t.categoryId, { start: t.start, count });
+      } else if (count > f.count) {
+        f.count = count;
+        due.push(t);
+      }
     }
-    if (due > fired.current.count) {
-      fired.current.count = due;
-      onRemind();
-    }
+    const running = new Set(timers.map((t) => t.categoryId));
+    for (const id of [...seen.keys()]) if (!running.has(id)) seen.delete(id);
+    if (due.length > 0) onRemind(due);
   }, [
-    active,
+    timers,
     settings.reminderEnabled,
     settings.reminderMinutes,
     now,

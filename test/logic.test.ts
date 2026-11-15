@@ -14,6 +14,7 @@ import {
   remindersDue,
   startTimer,
   stopTimer,
+  timerFor,
   updateBooking,
   updateCategory,
   updateSettings,
@@ -24,8 +25,8 @@ import { HOUR, MIN, T0, withCategory } from "./helpers";
 describe("timer", () => {
   it("books elapsed time with the chosen sign on stop", () => {
     const [s0, id] = withCategory();
-    const s = stopTimer(startTimer(s0, id, -1, T0), T0 + 90 * MIN);
-    expect(s.active).toBeNull();
+    const s = stopTimer(startTimer(s0, id, -1, T0), id, T0 + 90 * MIN);
+    expect(s.timers).toEqual([]);
     expect(s.bookings).toHaveLength(1);
     expect(s.bookings[0]).toMatchObject({
       start: T0,
@@ -36,20 +37,38 @@ describe("timer", () => {
     expect(balance(s, id)).toBe(-90 * 60);
   });
 
-  it("starting another timer stops and books the running one", () => {
+  it("runs timers of different categories independently", () => {
     const [s0, a] = withCategory("A");
     let s = addCategory(s0, "B", "#000000");
     const b = s.categories[1].id;
     s = startTimer(s, a, 1, T0);
-    s = startTimer(s, b, 1, T0 + HOUR);
-    expect(s.active).toMatchObject({ categoryId: b, start: T0 + HOUR });
-    expect(balance(s, a)).toBe(3600);
+    s = startTimer(s, b, -1, T0 + HOUR);
+    expect(s.timers).toHaveLength(2);
+    expect(s.bookings).toHaveLength(0);
+    s = stopTimer(s, a, T0 + 2 * HOUR);
+    expect(timerFor(s, a)).toBeUndefined();
+    expect(timerFor(s, b)).toMatchObject({ start: T0 + HOUR, sign: -1 });
+    expect(balance(s, a)).toBe(7200);
+    expect(liveBalance(s, b, T0 + 2 * HOUR)).toBe(-3600);
+  });
+
+  it("restarting a category's timer books the running one", () => {
+    const [s0, id] = withCategory();
+    let s = startTimer(s0, id, 1, T0);
+    s = startTimer(s, id, -1, T0 + HOUR);
+    expect(s.timers).toEqual([{ categoryId: id, sign: -1, start: T0 + HOUR }]);
+    expect(balance(s, id)).toBe(3600);
+  });
+
+  it("stopping a category without a timer is a no-op", () => {
+    const [s] = withCategory();
+    expect(stopTimer(s, s.categories[0].id, T0)).toBe(s);
   });
 
   it("discards sessions shorter than a second", () => {
     const [s0, id] = withCategory();
-    const s = stopTimer(startTimer(s0, id, 1, T0), T0 + 500);
-    expect(s.active).toBeNull();
+    const s = stopTimer(startTimer(s0, id, 1, T0), id, T0 + 500);
+    expect(s.timers).toEqual([]);
     expect(s.bookings).toHaveLength(0);
   });
 
@@ -128,7 +147,7 @@ describe("bookings", () => {
 });
 
 describe("compaction", () => {
-  it("folds bookings ended over a month ago into archivedSeconds", () => {
+  it("folds bookings ended over a month ago into the archived sums", () => {
     const [s0, id] = withCategory();
     const cutoff = compactionCutoff(T0);
     let s = addBooking(s0, {
@@ -166,8 +185,16 @@ describe("compaction", () => {
     const before = balance(s, id);
     const c = compact(s, T0);
     expect(c.bookings).toHaveLength(1); // the one ending after the cutoff
-    expect(c.categories[0].archivedSeconds).toBe(3600);
+    expect(c.categories[0]).toMatchObject({
+      archivedPositive: 7200,
+      archivedNegative: 3600,
+    });
     expect(balance(c, id)).toBe(before);
+    // The factor applies to archived time as well.
+    const cat = { ...c.categories[0], negativeFactor: 2 };
+    expect(balance(updateCategory(c, cat), id)).toBe(
+      balance(updateCategory(s, cat), id),
+    );
   });
 
   it("returns the same object when nothing is old", () => {
@@ -177,6 +204,49 @@ describe("compaction", () => {
 
   it("uses a calendar month", () => {
     expect(new Date(compactionCutoff(T0)).getMonth()).toBe(8);
+  });
+});
+
+describe("negative factor", () => {
+  it("scales negative bookings, presets and running timers", () => {
+    const [s0, id] = withCategory();
+    let s = updateCategory(s0, { ...s0.categories[0], negativeFactor: 2 });
+    s = addBooking(s, {
+      categoryId: id,
+      start: T0,
+      end: T0 + HOUR,
+      sign: -1,
+      note: "",
+      source: "manual",
+    });
+    expect(balance(s, id)).toBe(-7200);
+    s = addBooking(s, {
+      categoryId: id,
+      start: T0,
+      end: T0 + 2 * HOUR,
+      sign: 1,
+      note: "",
+      source: "manual",
+    });
+    expect(balance(s, id)).toBe(0);
+    s = applyPreset(s, id, s.categories[0].presets[1], T0); // −15 min
+    expect(balance(s, id)).toBe(-30 * 60);
+    s = startTimer(s, id, -1, T0);
+    expect(liveBalance(s, id, T0 + 10 * MIN)).toBe(-50 * 60);
+  });
+
+  it("supports factors below one", () => {
+    const [s0, id] = withCategory();
+    let s = updateCategory(s0, { ...s0.categories[0], negativeFactor: 0.5 });
+    s = applyPreset(s, id, s.categories[0].presets[1], T0);
+    expect(balance(s, id)).toBe(-450);
+  });
+
+  it.each([0, -1, 101, NaN])("rejects factor %s", (f) => {
+    const [s] = withCategory();
+    expect(() =>
+      updateCategory(s, { ...s.categories[0], negativeFactor: f }),
+    ).toThrow(ValidationError);
   });
 });
 
@@ -207,7 +277,7 @@ describe("categories and settings", () => {
     s = deleteCategory(s, id);
     expect(s.categories).toHaveLength(0);
     expect(s.bookings).toHaveLength(0);
-    expect(s.active).toBeNull();
+    expect(s.timers).toEqual([]);
   });
 
   it("reorders categories within bounds", () => {

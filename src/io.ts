@@ -1,4 +1,4 @@
-import { bookingSeconds } from "./logic";
+import { archivedBalance, bookingSeconds, weigh } from "./logic";
 import {
   type ActiveTimer,
   type Booking,
@@ -7,6 +7,8 @@ import {
   type Settings,
   type State,
   DEFAULT_SETTINGS,
+  MAX_FACTOR,
+  MIN_FACTOR,
 } from "./model";
 
 export class ImportError extends Error {}
@@ -66,14 +68,53 @@ function parsePreset(v: unknown, i: number): Preset {
   };
 }
 
-function parseCategory(v: unknown, i: number): Category {
+function nonNegInt(v: unknown, what: string): number {
+  const n = int(v, what);
+  if (n < 0) throw new ImportError(`${what}: must not be negative`);
+  return n;
+}
+
+function factor(v: unknown, what: string): number {
+  const n = num(v, what);
+  if (n < MIN_FACTOR || n > MAX_FACTOR)
+    throw new ImportError(`${what}: out of range`);
+  return n;
+}
+
+function parseCategory(v: unknown, i: number, version: 1 | 2): Category {
   const o = obj(v, `category ${i}`);
+  const what = `category ${i}`;
+  let archived: Pick<
+    Category,
+    "archivedPositive" | "archivedNegative" | "negativeFactor"
+  >;
+  if (version === 1) {
+    // v1 kept only the net archived sum and had no factor.
+    const net = int(o.archivedSeconds, `${what} archivedSeconds`);
+    archived = {
+      archivedPositive: Math.max(net, 0),
+      archivedNegative: Math.max(-net, 0),
+      negativeFactor: 1,
+    };
+  } else {
+    archived = {
+      archivedPositive: nonNegInt(
+        o.archivedPositive,
+        `${what} archivedPositive`,
+      ),
+      archivedNegative: nonNegInt(
+        o.archivedNegative,
+        `${what} archivedNegative`,
+      ),
+      negativeFactor: factor(o.negativeFactor, `${what} negativeFactor`),
+    };
+  }
   return {
-    id: str(o.id, `category ${i} id`, 64),
-    name: str(o.name, `category ${i} name`, 100),
-    color: color(o.color, `category ${i} color`),
-    archivedSeconds: int(o.archivedSeconds, `category ${i} archivedSeconds`),
-    presets: arr(o.presets, `category ${i} presets`).map(parsePreset),
+    id: str(o.id, `${what} id`, 64),
+    name: str(o.name, `${what} name`, 100),
+    color: color(o.color, `${what} color`),
+    ...archived,
+    presets: arr(o.presets, `${what} presets`).map(parsePreset),
   };
 }
 
@@ -104,16 +145,33 @@ function parseBooking(
   };
 }
 
-function parseActive(v: unknown, categoryIds: Set<string>): ActiveTimer | null {
-  if (v === null || v === undefined) return null;
-  const o = obj(v, "active");
-  const categoryId = str(o.categoryId, "active categoryId", 64);
-  if (!categoryIds.has(categoryId)) return null;
+function parseTimer(v: unknown, what: string): ActiveTimer {
+  const o = obj(v, what);
   return {
-    categoryId,
-    sign: sign(o.sign, "active sign"),
-    start: num(o.start, "active start"),
+    categoryId: str(o.categoryId, `${what} categoryId`, 64),
+    sign: sign(o.sign, `${what} sign`),
+    start: num(o.start, `${what} start`),
   };
+}
+
+/** v1 had a single `active` timer, v2 a `timers` array. Keeps one timer per known category. */
+function parseTimers(
+  o: Json,
+  version: 1 | 2,
+  categoryIds: Set<string>,
+): ActiveTimer[] {
+  const raw =
+    version === 1
+      ? o.active === null || o.active === undefined
+        ? []
+        : [parseTimer(o.active, "active")]
+      : arr(o.timers, "timers").map((t, i) => parseTimer(t, `timer ${i}`));
+  const seen = new Set<string>();
+  return raw.filter((t) => {
+    if (!categoryIds.has(t.categoryId) || seen.has(t.categoryId)) return false;
+    seen.add(t.categoryId);
+    return true;
+  });
 }
 
 function parseSettings(v: unknown): Settings {
@@ -138,18 +196,22 @@ export function parseState(text: string): State {
     throw new ImportError("Not valid JSON");
   }
   const o = obj(raw, "root");
-  if (o.version !== 1) throw new ImportError("Unsupported version");
-  const categories = arr(o.categories, "categories").map(parseCategory);
+  const version = o.version;
+  if (version !== 1 && version !== 2)
+    throw new ImportError("Unsupported version");
+  const categories = arr(o.categories, "categories").map((c, i) =>
+    parseCategory(c, i, version),
+  );
   const ids = new Set(categories.map((c) => c.id));
   if (ids.size !== categories.length)
     throw new ImportError("Duplicate category ids");
   return {
-    version: 1,
+    version: 2,
     categories,
     bookings: arr(o.bookings, "bookings").map((b, i) =>
       parseBooking(b, i, ids),
     ),
-    active: parseActive(o.active, ids),
+    timers: parseTimers(o, version, ids),
     settings: parseSettings(o.settings),
   };
 }
@@ -164,11 +226,16 @@ function csvField(value: string): string {
   return `"${safe.replace(/"/g, '""')}"`;
 }
 
-/** One row per booking plus one "archived" row per category. Times in ISO 8601 UTC. */
+/**
+ * One row per booking plus one "archived" row per category. Times in ISO 8601 UTC.
+ * `seconds` is the signed raw duration, `counted` includes the category's negative factor.
+ */
 export function toCSV(state: State): string {
-  const names = new Map(state.categories.map((c) => [c.id, c.name]));
+  const cats = new Map(state.categories.map((c) => [c.id, c]));
   const rows = [
-    ["category", "start", "end", "seconds", "source", "note"].join(","),
+    ["category", "start", "end", "seconds", "counted", "source", "note"].join(
+      ",",
+    ),
   ];
   for (const c of state.categories) {
     rows.push(
@@ -176,7 +243,8 @@ export function toCSV(state: State): string {
         csvField(c.name),
         "",
         "",
-        String(c.archivedSeconds),
+        String(c.archivedPositive - c.archivedNegative),
+        String(archivedBalance(c)),
         "archived",
         '""',
       ].join(","),
@@ -184,12 +252,15 @@ export function toCSV(state: State): string {
   }
   const sorted = [...state.bookings].sort((a, b) => a.start - b.start);
   for (const b of sorted) {
+    const cat = cats.get(b.categoryId);
+    const secs = bookingSeconds(b);
     rows.push(
       [
-        csvField(names.get(b.categoryId) ?? ""),
+        csvField(cat?.name ?? ""),
         new Date(b.start).toISOString(),
         new Date(b.end).toISOString(),
-        String(bookingSeconds(b)),
+        String(secs),
+        String(cat ? weigh(cat, secs) : secs),
         b.source,
         csvField(b.note),
       ].join(","),

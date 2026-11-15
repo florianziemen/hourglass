@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { compact, elapsedSeconds, liveBalance, stopTimer } from "../logic";
-import type { State } from "../model";
+import type { ActiveTimer, State } from "../model";
 import type { Store } from "../storage";
 import { formatDuration } from "../format";
 import { beep, unlockAudio } from "./audio";
@@ -18,7 +18,7 @@ export function App({ store }: { store: Store }) {
     null,
   );
   const route = useHashRoute();
-  const now = useNow(state.active ? 1000 : null);
+  const now = useNow(state.timers.length > 0 ? 1000 : null);
 
   const notify = useCallback(
     (text: string, error = false) => setToast({ text, error }),
@@ -72,23 +72,35 @@ export function App({ store }: { store: Store }) {
     return () => clearTimeout(id);
   }, [toast]);
 
-  const remind = useCallback(() => {
-    const s = stateRef.current;
-    const cat = s.categories.find((c) => c.id === s.active?.categoryId);
-    notify(`⏱ ${cat?.name ?? "Timer"} is still running`);
-    if (s.settings.reminderSound) beep();
-    navigator.vibrate?.([200, 100, 200]);
-  }, [notify]);
-  useReminder(state.active, state.settings, now, remind);
+  const remind = useCallback(
+    (due: ActiveTimer[]) => {
+      const s = stateRef.current;
+      const names = due.map(
+        (t) => s.categories.find((c) => c.id === t.categoryId)?.name ?? "Timer",
+      );
+      notify(
+        `⏱ ${names.join(", ")} ${names.length > 1 ? "are" : "is"} still running`,
+      );
+      if (s.settings.reminderSound) beep();
+      navigator.vibrate?.([200, 100, 200]);
+    },
+    [notify],
+  );
+  useReminder(state.timers, state.settings, now, remind);
 
-  const active = state.active;
-  const activeCat =
-    active && state.categories.find((c) => c.id === active.categoryId);
+  const running = state.timers.flatMap((t) => {
+    const cat = state.categories.find((c) => c.id === t.categoryId);
+    return cat ? [{ timer: t, cat }] : [];
+  });
   useEffect(() => {
-    document.title = active
-      ? `${formatDuration(elapsedSeconds(active, now), { signed: false, showSeconds: true })} · Hourglass`
-      : "Hourglass";
-  }, [active, now]);
+    const t = state.timers;
+    document.title =
+      t.length === 1
+        ? `${formatDuration(elapsedSeconds(t[0], now), { signed: false, showSeconds: true })} · Hourglass`
+        : t.length > 1
+          ? `${t.length} timers · Hourglass`
+          : "Hourglass";
+  }, [state.timers, now]);
 
   return (
     <div class="app">
@@ -101,31 +113,35 @@ export function App({ store }: { store: Store }) {
         </a>
       </header>
 
-      {active && activeCat && (
-        <div class="running" style={{ "--cat": activeCat.color }}>
-          <a href={`#/c/${activeCat.id}`} class="running-info">
-            <span class="running-name">
-              {active.sign > 0 ? "＋" : "－"} {activeCat.name}
-            </span>
-            <span class="running-time">
-              {formatDuration(elapsedSeconds(active, now), {
-                signed: false,
-                showSeconds: true,
-              })}
-            </span>
-            <span class="running-balance">
-              Balance{" "}
-              {formatDuration(liveBalance(state, activeCat.id, now), {
-                showSeconds: true,
-              })}
-            </span>
-          </a>
-          <button
-            class="btn stop"
-            onClick={() => update((s, t) => stopTimer(s, t))}
-          >
-            ■ Stop
-          </button>
+      {running.length > 0 && (
+        <div class="running-list">
+          {running.map(({ timer, cat }) => (
+            <div key={cat.id} class="running" style={{ "--cat": cat.color }}>
+              <a href={`#/c/${cat.id}`} class="running-info">
+                <span class="running-name">
+                  {timer.sign > 0 ? "＋" : "－"} {cat.name}
+                </span>
+                <span class="running-time">
+                  {formatDuration(elapsedSeconds(timer, now), {
+                    signed: false,
+                    showSeconds: true,
+                  })}
+                </span>
+                <span class="running-balance">
+                  Balance{" "}
+                  {formatDuration(liveBalance(state, cat.id, now), {
+                    showSeconds: true,
+                  })}
+                </span>
+              </a>
+              <button
+                class="btn stop"
+                onClick={() => update((s, t) => stopTimer(s, cat.id, t))}
+              >
+                ■ Stop
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
