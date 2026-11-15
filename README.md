@@ -6,7 +6,9 @@ Installable web app (PWA). All data stays in the browser on your device.
 ## Features
 
 - Categories with a running balance; start a timer that counts **＋** or **－**.
-- One timer at a time; starting another stops and books the running one.
+- Timers per category run independently; several categories can run at once.
+- Per-category weight for negative time (e.g. ×2: one hour of － needs two hours of ＋
+  to balance). Applies to all bookings of the category, archived ones included.
 - Quick bookings (presets) per category, default ±15 min, configurable.
 - Edit, add and delete bookings (time range, sign, category, note).
 - Bookings that ended more than one calendar month ago are folded into the category's

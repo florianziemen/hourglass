@@ -2,6 +2,8 @@ import {
   type ActiveTimer,
   type Booking,
   type Category,
+  MAX_FACTOR,
+  MIN_FACTOR,
   type Preset,
   type Settings,
   type Sign,
@@ -26,25 +28,43 @@ export function elapsedSeconds(active: ActiveTimer, now: number): number {
   return Math.max(0, Math.floor((now - active.start) / 1000));
 }
 
+/** Signed seconds as they count towards the balance: negative time is scaled by the factor. */
+export function weigh(cat: Category, seconds: number): number {
+  return seconds < 0 ? -Math.round(-seconds * cat.negativeFactor) : seconds;
+}
+
 export function balance(state: State, categoryId: string): number {
   const cat = state.categories.find((c) => c.id === categoryId);
   if (!cat) return 0;
   return state.bookings
     .filter((b) => b.categoryId === categoryId)
-    .reduce((sum, b) => sum + bookingSeconds(b), cat.archivedSeconds);
+    .reduce(
+      (sum, b) => sum + weigh(cat, bookingSeconds(b)),
+      archivedBalance(cat),
+    );
 }
 
-/** Balance including the running timer, if it belongs to this category. */
+export function archivedBalance(cat: Category): number {
+  return cat.archivedPositive + weigh(cat, -cat.archivedNegative);
+}
+
+export function timerFor(
+  state: State,
+  categoryId: string,
+): ActiveTimer | undefined {
+  return state.timers.find((t) => t.categoryId === categoryId);
+}
+
+/** Balance including the category's running timer, if any. */
 export function liveBalance(
   state: State,
   categoryId: string,
   now: number,
 ): number {
   const base = balance(state, categoryId);
-  const a = state.active;
-  return a && a.categoryId === categoryId
-    ? base + a.sign * elapsedSeconds(a, now)
-    : base;
+  const t = timerFor(state, categoryId);
+  const cat = state.categories.find((c) => c.id === categoryId);
+  return t && cat ? base + weigh(cat, t.sign * elapsedSeconds(t, now)) : base;
 }
 
 /** Number of reminder intervals completed by the running timer. */
@@ -67,16 +87,26 @@ export function compact(state: State, now: number): State {
   const cutoff = compactionCutoff(now);
   const old = state.bookings.filter((b) => b.end < cutoff);
   if (old.length === 0) return state;
-  const delta = new Map<string, number>();
-  for (const b of old)
-    delta.set(b.categoryId, (delta.get(b.categoryId) ?? 0) + bookingSeconds(b));
+  const delta = new Map<string, { pos: number; neg: number }>();
+  for (const b of old) {
+    const d = delta.get(b.categoryId) ?? { pos: 0, neg: 0 };
+    const secs = bookingSeconds(b);
+    if (secs < 0) d.neg -= secs;
+    else d.pos += secs;
+    delta.set(b.categoryId, d);
+  }
   return {
     ...state,
-    categories: state.categories.map((c) =>
-      delta.has(c.id)
-        ? { ...c, archivedSeconds: c.archivedSeconds + delta.get(c.id)! }
-        : c,
-    ),
+    categories: state.categories.map((c) => {
+      const d = delta.get(c.id);
+      return d
+        ? {
+            ...c,
+            archivedPositive: c.archivedPositive + d.pos,
+            archivedNegative: c.archivedNegative + d.neg,
+          }
+        : c;
+    }),
     bookings: state.bookings.filter((b) => b.end >= cutoff),
   };
 }
@@ -89,6 +119,7 @@ function requireCategory(state: State, categoryId: string): Category {
 
 // --- timer ---
 
+/** Start a timer for one category; a timer already running there is stopped and booked. */
 export function startTimer(
   state: State,
   categoryId: string,
@@ -96,17 +127,24 @@ export function startTimer(
   now: number,
 ): State {
   requireCategory(state, categoryId);
-  return { ...stopTimer(state, now), active: { categoryId, sign, start: now } };
+  const s = stopTimer(state, categoryId, now);
+  return { ...s, timers: [...s.timers, { categoryId, sign, start: now }] };
 }
 
-export function stopTimer(state: State, now: number): State {
-  const a = state.active;
+/** Stop the category's timer (if running) and book its elapsed time. */
+export function stopTimer(
+  state: State,
+  categoryId: string,
+  now: number,
+): State {
+  const a = timerFor(state, categoryId);
   if (!a) return state;
+  const timers = state.timers.filter((t) => t !== a);
   if (
     now - a.start < MIN_TIMER_MS ||
     !state.categories.some((c) => c.id === a.categoryId)
   ) {
-    return { ...state, active: null };
+    return { ...state, timers };
   }
   const booking: Booking = {
     id: newId(),
@@ -117,7 +155,7 @@ export function stopTimer(state: State, now: number): State {
     note: "",
     source: "timer",
   };
-  return { ...state, active: null, bookings: [...state.bookings, booking] };
+  return { ...state, timers, bookings: [...state.bookings, booking] };
 }
 
 // --- bookings ---
@@ -180,7 +218,19 @@ export function defaultPresets(): Preset[] {
 
 function validateCategory(c: Category): void {
   check(c.name.trim().length > 0, "Name must not be empty");
-  check(Number.isInteger(c.archivedSeconds), "Invalid archived sum");
+  check(
+    Number.isInteger(c.archivedPositive) &&
+      Number.isInteger(c.archivedNegative) &&
+      c.archivedPositive >= 0 &&
+      c.archivedNegative >= 0,
+    "Invalid archived sum",
+  );
+  check(
+    Number.isFinite(c.negativeFactor) &&
+      c.negativeFactor >= MIN_FACTOR &&
+      c.negativeFactor <= MAX_FACTOR,
+    `Factor must be ${MIN_FACTOR}–${MAX_FACTOR}`,
+  );
   for (const p of c.presets) {
     check(
       Number.isInteger(p.seconds) && p.seconds !== 0,
@@ -194,7 +244,9 @@ export function addCategory(state: State, name: string, color: string): State {
     id: newId(),
     name: name.trim(),
     color,
-    archivedSeconds: 0,
+    archivedPositive: 0,
+    archivedNegative: 0,
+    negativeFactor: 1,
     presets: defaultPresets(),
   };
   validateCategory(cat);
@@ -216,7 +268,7 @@ export function deleteCategory(state: State, id: string): State {
     ...state,
     categories: state.categories.filter((c) => c.id !== id),
     bookings: state.bookings.filter((b) => b.categoryId !== id),
-    active: state.active?.categoryId === id ? null : state.active,
+    timers: state.timers.filter((t) => t.categoryId !== id),
   };
 }
 

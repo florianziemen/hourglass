@@ -12,8 +12,12 @@ export interface Category {
   id: string;
   name: string;
   color: string;
-  /** Net seconds of bookings that were compacted away. */
-  archivedSeconds: number;
+  /** Seconds of positive bookings that were compacted away (>= 0). */
+  archivedPositive: number;
+  /** Seconds of negative bookings that were compacted away, as magnitude (>= 0). */
+  archivedNegative: number;
+  /** Weight of negative time: balance = positive − negativeFactor × negative. */
+  negativeFactor: number;
   presets: Preset[];
 }
 
@@ -41,11 +45,15 @@ export interface Settings {
   reminderSound: boolean;
 }
 
+export const MIN_FACTOR = 0.01;
+export const MAX_FACTOR = 100;
+
 export interface State {
-  version: 1;
+  version: 2;
   categories: Category[];
   bookings: Booking[];
-  active: ActiveTimer | null;
+  /** Running timers, at most one per category. */
+  timers: ActiveTimer[];
   settings: Settings;
 }
 
@@ -57,10 +65,10 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export function emptyState(): State {
   return {
-    version: 1,
+    version: 2,
     categories: [],
     bookings: [],
-    active: null,
+    timers: [],
     settings: { ...DEFAULT_SETTINGS },
   };
 }

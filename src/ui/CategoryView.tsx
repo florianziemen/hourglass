@@ -1,14 +1,24 @@
 import { Fragment } from "preact";
 import { useState } from "preact/hooks";
 import {
+  archivedBalance,
   bookingSeconds,
   compactionCutoff,
   deleteCategory,
   liveBalance,
   moveCategory,
+  timerFor,
   updateCategory,
+  weigh,
 } from "../logic";
-import { type Booking, type Category, type State, newId } from "../model";
+import {
+  type Booking,
+  type Category,
+  MAX_FACTOR,
+  MIN_FACTOR,
+  type State,
+  newId,
+} from "../model";
 import { formatDay, formatDuration, formatTime, presetLabel } from "../format";
 import type { Update } from "./App";
 import { BookingEditor } from "./BookingEditor";
@@ -37,6 +47,7 @@ export function CategoryView({ state, id, now, update }: Props) {
     .filter((b) => b.categoryId === id)
     .sort((a, b) => b.start - a.start);
   const bal = liveBalance(state, id, now);
+  const archived = archivedBalance(cat);
 
   return (
     <section style={{ "--cat": cat.color }}>
@@ -48,10 +59,13 @@ export function CategoryView({ state, id, now, update }: Props) {
         <h1>{cat.name}</h1>
         <span class={`balance big ${bal < 0 ? "neg" : "pos"}`}>
           {formatDuration(bal, {
-            showSeconds: state.active?.categoryId === id,
+            showSeconds: !!timerFor(state, id),
           })}
         </span>
       </div>
+      {cat.negativeFactor !== 1 && (
+        <p class="muted small">－ time counts ×{cat.negativeFactor}</p>
+      )}
 
       <div class="row">
         <button class="btn grow" onClick={() => setEditing("new")}>
@@ -70,7 +84,7 @@ export function CategoryView({ state, id, now, update }: Props) {
         {bookings.map((b, i) => {
           const newDay =
             i === 0 || formatDay(bookings[i - 1].start) !== formatDay(b.start);
-          const secs = bookingSeconds(b);
+          const secs = weigh(cat, bookingSeconds(b));
           return (
             <Fragment key={b.id}>
               {newDay && <li class="day">{formatDay(b.start)}</li>}
@@ -90,8 +104,8 @@ export function CategoryView({ state, id, now, update }: Props) {
         })}
         <li class="archived">
           <span>Before {formatDay(compactionCutoff(now))} (archived)</span>
-          <span class={`amount ${cat.archivedSeconds < 0 ? "neg" : "pos"}`}>
-            {formatDuration(cat.archivedSeconds)}
+          <span class={`amount ${archived < 0 ? "neg" : "pos"}`}>
+            {formatDuration(archived)}
           </span>
         </li>
       </ul>
@@ -118,6 +132,7 @@ function CategorySettings({ cat, update }: { cat: Category; update: Update }) {
   const [name, setName] = useState(cat.name);
   const [minutes, setMinutes] = useState("15");
   const [label, setLabel] = useState("");
+  const [factor, setFactor] = useState(String(cat.negativeFactor));
 
   const save = (next: Category) => update((s) => updateCategory(s, next));
 
@@ -173,6 +188,38 @@ function CategorySettings({ cat, update }: { cat: Category; update: Update }) {
           Rename
         </button>
       </form>
+
+      <h2>Weight of － time</h2>
+      <form
+        class="row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save({ ...cat, negativeFactor: Number(factor) });
+        }}
+      >
+        <span>－ counts ×</span>
+        <input
+          type="number"
+          min={MIN_FACTOR}
+          max={MAX_FACTOR}
+          step="any"
+          class="narrow"
+          value={factor}
+          onInput={(e) => setFactor(e.currentTarget.value)}
+          aria-label="Factor for negative time"
+        />
+        <button
+          class="btn"
+          type="submit"
+          disabled={Number(factor) === cat.negativeFactor}
+        >
+          Set
+        </button>
+      </form>
+      <p class="muted small">
+        E.g. 2: one hour of － needs two hours of ＋ to balance. Applies to all
+        bookings of this category, archived ones included.
+      </p>
 
       <h2>Quick bookings</h2>
       <ul class="presets">

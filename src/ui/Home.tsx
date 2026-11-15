@@ -5,6 +5,7 @@ import {
   liveBalance,
   startTimer,
   stopTimer,
+  timerFor,
 } from "../logic";
 import type { Category, State } from "../model";
 import { formatDuration } from "../format";
@@ -68,7 +69,7 @@ export function Home({ state, now, update }: Props) {
 }
 
 function CategoryCard({ cat, state, now, update }: { cat: Category } & Props) {
-  const running = state.active?.categoryId === cat.id ? state.active : null;
+  const running = timerFor(state, cat.id);
   const bal = liveBalance(state, cat.id, now);
   return (
     <li
@@ -86,7 +87,7 @@ function CategoryCard({ cat, state, now, update }: { cat: Category } & Props) {
         {running ? (
           <button
             class="btn stop grow"
-            onClick={() => update((s, t) => stopTimer(s, t))}
+            onClick={() => update((s, t) => stopTimer(s, cat.id, t))}
           >
             ■ Stop
           </button>

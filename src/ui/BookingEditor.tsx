@@ -4,6 +4,7 @@ import {
   compactionCutoff,
   deleteBooking,
   updateBooking,
+  weigh,
 } from "../logic";
 import type { Booking, Sign, State } from "../model";
 import { formatDuration, fromLocalInput, toLocalInput } from "../format";
@@ -38,6 +39,9 @@ export function BookingEditor({
   const endMs = fromLocalInput(end);
   const valid =
     Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs;
+  const cat = state.categories.find((c) => c.id === catId);
+  const raw = sign * Math.round((endMs - startMs) / 1000);
+  const effect = cat ? weigh(cat, raw) : raw;
 
   const save = (e: Event) => {
     e.preventDefault();
@@ -132,7 +136,7 @@ export function BookingEditor({
         </label>
         <p class={valid ? "muted" : "neg"}>
           {valid
-            ? `Effect: ${formatDuration((sign * Math.round(endMs - startMs)) / 1000, { showSeconds: true })}`
+            ? `Effect: ${formatDuration(effect, { showSeconds: true })}`
             : "End must be after start"}
         </p>
         {valid && endMs < compactionCutoff(now) && (
